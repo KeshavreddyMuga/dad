@@ -172,9 +172,26 @@ def dashboard():
     content += "<h3>Projects</h3>"
     for p in Project.query.all():
         status = " (Finished)" if p.is_finished else ""
-        content += f"<div class='card'><a href='/project/{p.id}'>{p.name}{status}</a></div>"
+        content += f"<div class='card'><b>{p.name}{status}</b></div>"
 
     return render(content)
+
+# ✅ FIXED ROUTE (THIS WAS MISSING)
+
+@app.route("/create_project", methods=["POST"])
+def create_project():
+    if "user_id" not in session or session.get("role") != "admin":
+        return redirect("/dashboard")
+
+    project = Project(
+        name=request.form["name"],
+        weeks=int(request.form["weeks"])
+    )
+
+    db.session.add(project)
+    db.session.commit()
+
+    return redirect("/dashboard")
 
 @app.route("/register", methods=["GET","POST"])
 def register():
