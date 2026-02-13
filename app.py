@@ -2,7 +2,7 @@ import os
 import requests
 from datetime import datetime
 from uuid import uuid4
-from flask import Flask, request, redirect, session, send_from_directory
+from flask import Flask, request, redirect, session, send_from_directory, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -17,7 +17,7 @@ app.config["UPLOAD_FOLDER"] = "uploads"
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 db = SQLAlchemy(app)
 
-# ================= EMAIL FUNCTION =================
+# ================= EMAIL =================
 
 def send_email(to_email, subject, html_content):
     try:
@@ -80,28 +80,21 @@ with app.app_context():
 def render(content):
     logout = ""
     if "user_id" in session:
-        logout = "<a href='/logout' class='logout'>Logout</a>"
+        logout = "<a href='/logout' style='float:right;color:white;'>Logout</a>"
 
     return f"""
     <html>
     <head>
     <style>
-    body {{ margin:0; font-family:Arial; background:linear-gradient(135deg,#667eea,#764ba2); color:white; }}
-    .container {{ width:90%; max-width:1000px; margin:40px auto; padding:30px;
-        background:rgba(255,255,255,0.15); border-radius:15px; backdrop-filter:blur(10px); position:relative; }}
-    .logout {{ position:absolute; top:20px; right:20px; color:white; }}
-    input, textarea, select {{ width:100%; padding:10px; margin:8px 0; border:none; border-radius:8px; }}
-    button {{ padding:8px 15px; border:none; border-radius:8px; background:black; color:white; cursor:pointer; margin:5px 0; }}
-    .card {{ background:rgba(0,0,0,0.3); padding:15px; border-radius:10px; margin:10px 0; }}
-    .locked {{ background:gray; cursor:not-allowed; }}
-    a {{ text-decoration:none; color:white; }}
+    body {{ font-family:Arial; background:#667eea; color:white; padding:30px; }}
+    input,textarea,select {{ padding:8px;margin:5px 0;width:100%; }}
+    button {{ padding:8px 15px;margin:5px 0; }}
+    .card {{ background:#444;padding:15px;margin:10px 0; }}
     </style>
     </head>
     <body>
-    <div class='container'>
     {logout}
     {content}
-    </div>
     </body>
     </html>
     """
@@ -112,35 +105,11 @@ def render(content):
 def home():
     return redirect("/dashboard") if "user_id" in session else redirect("/login")
 
-@app.route("/dashboard")
-def dashboard():
-    if "user_id" not in session:
-        return redirect("/login")
-
-    content = f"<h2>Welcome {session['user_name']} ({session['role']})</h2>"
-
-    if session["role"] == "admin":
-        content += """
-        <h3>Create Project</h3>
-        <form method='POST' action='/create_project'>
-        <input name='name' required placeholder='Project Name'>
-        <input type='number' name='weeks' required placeholder='Total Weeks'>
-        <button>Create Project</button>
-        </form>
-        """
-
-    content += "<h3>Projects</h3>"
-    for p in Project.query.all():
-        content += f"<div class='card'><a href='/project/{p.id}'>{p.name}</a></div>"
-
-    return render(content)
-
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
         if User.query.filter_by(email=request.form["email"]).first():
-            return render("<h3>Email already registered!</h3>")
-
+            return render("<h3>Email already exists</h3>")
         role = "admin" if User.query.count() == 0 else "member"
         user = User(
             name=request.form["name"],
@@ -153,14 +122,14 @@ def register():
         return redirect("/login")
 
     return render("""
-        <h2>Create Account</h2>
+        <h2>Register</h2>
         <form method='POST'>
-        <input name='name' required placeholder='Name'>
-        <input name='email' required placeholder='Email'>
-        <input type='password' name='password' required placeholder='Password'>
+        <input name='name' placeholder='Name' required>
+        <input name='email' placeholder='Email' required>
+        <input type='password' name='password' placeholder='Password' required>
         <button>Create Account</button>
         </form>
-        <a href='/login'><button>Back</button></a>
+        <a href='/login'>Login</a>
     """)
 
 @app.route("/login", methods=["GET","POST"])
@@ -177,11 +146,11 @@ def login():
     return render("""
         <h2>Login</h2>
         <form method='POST'>
-        <input name='email' required placeholder='Email'>
-        <input type='password' name='password' required placeholder='Password'>
+        <input name='email' required>
+        <input type='password' name='password' required>
         <button>Login</button>
         </form>
-        <a href='/register'><button>Create Account</button></a>
+        <a href='/register'>Create Account</a>
     """)
 
 @app.route("/logout")
@@ -189,47 +158,58 @@ def logout():
     session.clear()
     return redirect("/login")
 
-# ================= PROJECT PAGE =================
+# ================= DASHBOARD =================
 
-@app.route("/project/<int:pid>")
-def project_page(pid):
+@app.route("/dashboard")
+def dashboard():
     if "user_id" not in session:
         return redirect("/login")
 
-    project = Project.query.get_or_404(pid)
-    content = f"<h2>{project.name}</h2>"
+    content = f"<h2>Welcome {session['user_name']}</h2>"
 
-    content += f"<p>Current Week: {project.current_week}</p>"
+    if session["role"] == "admin":
+        content += """
+        <h3>Create Project</h3>
+        <form method='POST' action='/create_project'>
+        <input name='name' placeholder='Project Name' required>
+        <input type='number' name='weeks' placeholder='Weeks' required>
+        <button>Create</button>
+        </form>
+        """
 
-    content += "<br><a href='/dashboard'><button>Back</button></a>"
+    content += "<h3>Projects</h3>"
+    for p in Project.query.all():
+        content += f"<div class='card'><a href='/project/{p.id}'>{p.name}</a></div>"
+
     return render(content)
 
-# ================= VIEW / DOWNLOAD =================
+# ================= PROJECT =================
 
-@app.route("/uploads/<filename>")
-def download_file(filename):
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
+@app.route("/create_project", methods=["POST"])
+def create_project():
+    project = Project(name=request.form["name"], weeks=int(request.form["weeks"]))
+    db.session.add(project)
+    db.session.commit()
+    return redirect("/dashboard")
 
-@app.route("/view/<filename>")
-def view_file(filename):
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+@app.route("/project/<int:pid>")
+def project_page(pid):
+    project = Project.query.get_or_404(pid)
+    content = f"<h2>{project.name}</h2>"
+    content += f"<p>Current Week: {project.current_week}</p>"
+    content += "<a href='/dashboard'>Back</a>"
+    return render(content)
 
-# ================= DUE REMINDER =================
+# ================= REMINDER =================
 
 @app.route("/check_due_tasks")
 def check_due_tasks():
     today = datetime.today().date()
     tasks = Task.query.filter_by(end_date=today, is_completed=False).all()
-
     for task in tasks:
         member = User.query.get(task.assigned_to)
-        send_email(
-            member.email,
-            "Reminder: Task Due Today",
-            f"Hello {member.name}, today is the last day to submit '{task.title}'."
-        )
-
-    return "Reminder check completed"
+        send_email(member.email, "Reminder", f"Task '{task.title}' due today.")
+    return "Done"
 
 # ================= RUN =================
 
