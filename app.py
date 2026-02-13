@@ -112,6 +112,29 @@ def render(content):
 def home():
     return redirect("/dashboard") if "user_id" in session else redirect("/login")
 
+@app.route("/dashboard")
+def dashboard():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    content = f"<h2>Welcome {session['user_name']} ({session['role']})</h2>"
+
+    if session["role"] == "admin":
+        content += """
+        <h3>Create Project</h3>
+        <form method='POST' action='/create_project'>
+        <input name='name' required placeholder='Project Name'>
+        <input type='number' name='weeks' required placeholder='Total Weeks'>
+        <button>Create Project</button>
+        </form>
+        """
+
+    content += "<h3>Projects</h3>"
+    for p in Project.query.all():
+        content += f"<div class='card'><a href='/project/{p.id}'>{p.name}</a></div>"
+
+    return render(content)
+
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
@@ -166,52 +189,32 @@ def logout():
     session.clear()
     return redirect("/login")
 
-# ================= PROJECT / TASK LOGIC =================
+# ================= PROJECT PAGE =================
 
-@app.route("/create_project", methods=["POST"])
-def create_project():
-    if session.get("role") != "admin":
-        return redirect("/dashboard")
+@app.route("/project/<int:pid>")
+def project_page(pid):
+    if "user_id" not in session:
+        return redirect("/login")
 
-    project = Project(name=request.form["name"], weeks=int(request.form["weeks"]))
-    db.session.add(project)
-    db.session.commit()
-    return redirect("/dashboard")
-
-@app.route("/next_week/<int:pid>")
-def next_week(pid):
     project = Project.query.get_or_404(pid)
-    if project.current_week < project.weeks:
-        project.current_week += 1
-        db.session.commit()
+    content = f"<h2>{project.name}</h2>"
 
-        users = User.query.filter(User.role != "admin").all()
-        for u in users:
-            send_email(
-                u.email,
-                f"Project Moved to Next Week - {project.name}",
-                f"The project '{project.name}' has moved to Week {project.current_week}."
-            )
+    content += f"<p>Current Week: {project.current_week}</p>"
 
-    return redirect(f"/project/{pid}")
+    content += "<br><a href='/dashboard'><button>Back</button></a>"
+    return render(content)
 
-@app.route("/finish_project/<int:pid>")
-def finish_project(pid):
-    project = Project.query.get_or_404(pid)
-    project.is_finished = True
-    db.session.commit()
+# ================= VIEW / DOWNLOAD =================
 
-    users = User.query.filter(User.role != "admin").all()
-    for u in users:
-        send_email(
-            u.email,
-            f"Project Completed - {project.name}",
-            f"The project '{project.name}' has been completed."
-        )
+@app.route("/uploads/<filename>")
+def download_file(filename):
+    return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
 
-    return redirect(f"/project/{pid}")
+@app.route("/view/<filename>")
+def view_file(filename):
+    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
-# ================= DUE REMINDER ROUTE =================
+# ================= DUE REMINDER =================
 
 @app.route("/check_due_tasks")
 def check_due_tasks():
@@ -222,7 +225,7 @@ def check_due_tasks():
         member = User.query.get(task.assigned_to)
         send_email(
             member.email,
-            f"Reminder: Task Due Today",
+            "Reminder: Task Due Today",
             f"Hello {member.name}, today is the last day to submit '{task.title}'."
         )
 
